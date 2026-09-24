@@ -1,0 +1,21 @@
+# .gitignore 생성 및 필수 항목 추가
+cat <<EOF > .gitignore
+# 환경 변수 및 인증 정보 파일
+.env
+*.env
+client_secret*.json
+
+# Go 컴파일 바이너리
+server
+main
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+
+# OS 및 IDE 설정
+.DS_Store
+.vscode/
+.idea/
+EOF
