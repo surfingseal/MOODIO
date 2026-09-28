@@ -324,7 +324,7 @@ func (h *Handler) HandleHome(w http.ResponseWriter, r *http.Request) {
   <div class="container">
     <div class="card">
       <div class="header">
-        <div class="badge">✨ GEMINI 3.8 FLASH × YOUTUBE MUSIC</div>
+        <div class="badge">✨ GEMINI 3.5 FLASH-LITE × YOUTUBE MUSIC</div>
         <h1>사진으로 만드는 맞춤 플레이리스트</h1>
         <p class="desc">여행지나 일상 사진을 올리면 Gemini AI가 분위기를 읽고 어울리는 음악을 자동 선곡하여 유튜브 보관함에 담아드립니다.</p>
       </div>

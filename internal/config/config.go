@@ -29,7 +29,7 @@ func Load() (*Config, error) {
 		RedirectURL:        getEnv("REDIRECT_URL", "http://localhost:8080/auth/google/callback"),
 		OAuthState:         getEnv("OAUTH_STATE", "moodio-oauth-state-token"),
 		GeminiAPIKey:       os.Getenv("GEMINI_API_KEY"),
-		GeminiModel:        getEnv("GEMINI_MODEL", "gemini-3.8-flash"),
+		GeminiModel:        getEnv("GEMINI_MODEL", "gemini-3.5-flash-lite"),
 	}
 
 	if cfg.GeminiAPIKey == "" {

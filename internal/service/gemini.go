@@ -31,10 +31,10 @@ func NewGeminiService(ctx context.Context, apiKey, modelName string) (*GeminiSer
 	}
 
 	if modelName == "" {
-		modelName = "gemini-3.8-flash"
+		modelName = "gemini-3.5-flash-lite"
 	}
 
-	// 기본 멀티모달 고성능 플래그십 모델로 gemini-3.8-flash 사용
+	// 초저지연 멀티모달 경량 모델로 gemini-3.5-flash-lite 사용
 	return &GeminiService{
 		client: client,
 		model:  modelName,
@@ -101,9 +101,9 @@ func (s *GeminiService) AnalyzeMoodFromImage(ctx context.Context, imageBytes []b
 		ResponseSchema:   schema,
 		Temperature:      genai.Ptr[float32](0.7),
 		MaxOutputTokens:  800,
-		// 직관적인 감성 선곡 작업을 위해 Thinking을 Low로 설정하여 응답 대기 시간을 최소화
+		// 감성 선곡 및 분위기 파악은 직관적인 멀티모달 창작 작업이므로 Thinking을 0(Off)으로 설정하여 추론 딜레이 없이 즉각 응답
 		ThinkingConfig: &genai.ThinkingConfig{
-			ThinkingLevel: genai.ThinkingLevelLow,
+			ThinkingBudget: genai.Ptr[int32](0),
 		},
 	}
 
