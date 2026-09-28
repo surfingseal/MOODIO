@@ -100,6 +100,11 @@ func (s *GeminiService) AnalyzeMoodFromImage(ctx context.Context, imageBytes []b
 		ResponseMIMEType: "application/json",
 		ResponseSchema:   schema,
 		Temperature:      genai.Ptr[float32](0.7),
+		MaxOutputTokens:  800,
+		// 직관적인 감성 선곡 작업을 위해 Thinking을 Low로 설정하여 응답 대기 시간을 최소화
+		ThinkingConfig: &genai.ThinkingConfig{
+			ThinkingLevel: genai.ThinkingLevelLow,
+		},
 	}
 
 	log.Printf("🤖 Gemini 멀티모달 이미지 분석 시작 (모델: %s, 이미지 크기: %d bytes)", s.model, len(imageBytes))

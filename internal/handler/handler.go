@@ -412,18 +412,58 @@ func (h *Handler) HandleHome(w http.ResponseWriter, r *http.Request) {
       resultSection.style.display = 'none';
     });
 
+    // 이미지 고속 압축 함수 (최대 1024px, JPEG 85% 품질로 변환하여 업로드 및 AI 분석 속도 극대화)
+    function resizeImage(file, maxDimension = 1024, quality = 0.85) {
+      return new Promise((resolve) => {
+        const reader = new FileReader();
+        reader.onload = (e) => {
+          const img = new Image();
+          img.onload = () => {
+            let width = img.width;
+            let height = img.height;
+
+            if (width > height) {
+              if (width > maxDimension) {
+                height = Math.round((height * maxDimension) / width);
+                width = maxDimension;
+              }
+            } else {
+              if (height > maxDimension) {
+                width = Math.round((width * maxDimension) / height);
+                height = maxDimension;
+              }
+            }
+
+            const canvas = document.createElement('canvas');
+            canvas.width = width;
+            canvas.height = height;
+            const ctx = canvas.getContext('2d');
+            ctx.drawImage(img, 0, 0, width, height);
+
+            canvas.toBlob((blob) => {
+              resolve(blob || file);
+            }, 'image/jpeg', quality);
+          };
+          img.src = e.target.result;
+        };
+        reader.readAsDataURL(file);
+      });
+    }
+
     // AI Analyze
     analyzeBtn.addEventListener('click', async () => {
       if (!selectedFile) return;
-
-      const formData = new FormData();
-      formData.append('image', selectedFile);
 
       analyzeBtn.style.display = 'none';
       loading.style.display = 'block';
       resultSection.style.display = 'none';
 
       try {
+        // 고용량 사진을 브라우저에서 1024px로 고속 압축(약 150KB)하여 네트워크 및 AI 처리 시간 단축
+        const compressedBlob = await resizeImage(selectedFile);
+        const formData = new FormData();
+        formData.append('image', compressedBlob, 'photo.jpg');
+
         const res = await fetch('/api/analyze', { method: 'POST', body: formData });
         if (!res.ok) {
           const errText = await res.text();
