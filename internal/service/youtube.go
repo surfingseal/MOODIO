@@ -6,6 +6,7 @@ import (
 	"log"
 	"regexp"
 	"strings"
+	"sync"
 
 	"github.com/surfingseal/MOODIO/internal/model"
 	"golang.org/x/oauth2"
@@ -109,7 +110,7 @@ func (s *YouTubeService) AddTrack(ctx context.Context, playlistID, videoID strin
 }
 
 // GeneratePlaylistWithTracks 플레이리스트 생성 및 트랙 등록을 수행합니다.
-// Gemini가 추출한 VideoID를 우선 사용하여 YouTube Search API 호출을 최소화합니다.
+// 곡 검색을 Goroutine으로 병렬 처리하여 대기 시간을 대폭 단축하고, 등록 시 원래 곡 순서를 보장합니다.
 func (s *YouTubeService) GeneratePlaylistWithTracks(ctx context.Context, req model.PlaylistRequest) (string, error) {
 	playlistID, err := s.CreatePlaylist(ctx, req.Title, req.Description, req.PrivacyStatus)
 	if err != nil {
@@ -118,31 +119,66 @@ func (s *YouTubeService) GeneratePlaylistWithTracks(ctx context.Context, req mod
 
 	log.Printf("📁 플레이리스트 생성 완료 (ID: %s, 제목: %s)", playlistID, req.Title)
 
-	for i, track := range req.Tracks {
-		var videoID string
+	// 1단계: 병렬 비디오 ID 확인 및 검색 (최대 동시 5개 실행)
+	totalTracks := len(req.Tracks)
+	videoIDs := make([]string, totalTracks)
+	sem := make(chan struct{}, 5) // 동시 요청 제한 세마포어
+	var wg sync.WaitGroup
 
-		// 1. Gemini가 제공한 VideoID가 유효한 경우: 검색 API 완전 생략
-		if isValidVideoID(track.VideoID) {
-			videoID = track.VideoID
-			log.Printf("⚡ [%d/%d] Gemini 추출 VideoID 직접 활용 (Search 생략): %s (ID: %s)", i+1, len(req.Tracks), track, videoID)
-		} else {
-			// 2. VideoID가 없는 경우: Search.List API로 검색 수행
-			query := track.SearchQuery()
-			log.Printf("🔍 [%d/%d] YouTube Search API 호출: %s", i+1, len(req.Tracks), query)
+	for i, track := range req.Tracks {
+		wg.Add(1)
+		go func(idx int, t model.Track) {
+			defer wg.Done()
+
+			// Gemini가 유효한 VideoID를 이미 제공한 경우 검색 건너뜀
+			if isValidVideoID(t.VideoID) {
+				videoIDs[idx] = t.VideoID
+				log.Printf("⚡ [%d/%d] Gemini 추출 VideoID 직접 활용: %s (ID: %s)", idx+1, totalTracks, t, t.VideoID)
+				return
+			}
+
+			// 검색이 필요한 경우 세마포어 슬롯 확보 후 병렬 검색 수행
+			sem <- struct{}{}
+			defer func() { <-sem }()
+
+			query := t.SearchQuery()
+			log.Printf("🔍 [%d/%d] 병렬 검색 실행: %s", idx+1, totalTracks, query)
 			foundID, err := s.SearchVideoID(ctx, query)
 			if err != nil {
-				log.Printf("[%d/%d] 검색 실패 (%s): %v", i+1, len(req.Tracks), track, err)
-				continue
+				log.Printf("⚠️ [%d/%d] 검색 실패 (%s): %v", idx+1, totalTracks, t, err)
+				return
 			}
-			videoID = foundID
-		}
+			videoIDs[idx] = foundID
+		}(i, track)
+	}
 
-		if err := s.AddTrack(ctx, playlistID, videoID); err != nil {
-			log.Printf("[%d/%d] 등록 실패 (%s, ID: %s): %v", i+1, len(req.Tracks), track, videoID, err)
+	// 모든 병렬 검색 작업 완료 대기
+	wg.Wait()
+
+	// 2단계: 원래 순서대로 플레이리스트에 등록 (순서 보장)
+	for i, track := range req.Tracks {
+		videoID := videoIDs[i]
+		if videoID == "" {
+			log.Printf("⚠️ [%d/%d] 비디오 ID 누락으로 등록 건너뜀: %s", i+1, totalTracks, track)
 			continue
 		}
 
-		log.Printf("✅ [%d/%d] 등록 완료: %s (VideoID: %s)", i+1, len(req.Tracks), track, videoID)
+		err := s.AddTrack(ctx, playlistID, videoID)
+		if err != nil {
+			log.Printf("⚠️ [%d/%d] 1차 등록 실패 (ID: %s), 검색 Fallback 시도: %s", i+1, totalTracks, videoID, track)
+			// 잘못된 비디오 ID였을 경우 즉시 검색 API로 재시도
+			foundID, searchErr := s.SearchVideoID(ctx, track.SearchQuery())
+			if searchErr == nil && foundID != "" {
+				if retryErr := s.AddTrack(ctx, playlistID, foundID); retryErr == nil {
+					log.Printf("✅ [%d/%d] Fallback 등록 성공: %s (ID: %s)", i+1, totalTracks, track, foundID)
+					continue
+				}
+			}
+			log.Printf("❌ [%d/%d] 최종 등록 실패: %s (%v)", i+1, totalTracks, track, err)
+			continue
+		}
+
+		log.Printf("✅ [%d/%d] 등록 완료: %s (VideoID: %s)", i+1, totalTracks, track, videoID)
 	}
 
 	youtubeMusicURL := fmt.Sprintf("https://music.youtube.com/playlist?list=%s", playlistID)

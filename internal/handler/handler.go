@@ -295,16 +295,28 @@ func (h *Handler) HandleHome(w http.ResponseWriter, r *http.Request) {
       font-size: 13px;
       width: 20px;
     }
-    .track-thumb {
+    .track-thumb, .track-thumb-placeholder {
       width: 44px;
       height: 33px;
       border-radius: 6px;
+      flex-shrink: 0;
+    }
+    .track-thumb {
       object-fit: cover;
       background: #1e293b;
       box-shadow: 0 2px 6px rgba(0, 0, 0, 0.4);
     }
-    .track-info { flex: 1; }
-    .track-title { font-weight: 600; color: #f1f5f9; }
+    .track-thumb-placeholder {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      background: rgba(255, 255, 255, 0.06);
+      border: 1px solid rgba(255, 255, 255, 0.1);
+      font-size: 14px;
+      color: #94a3b8;
+    }
+    .track-info { flex: 1; min-width: 0; text-align: left; }
+    .track-title { font-weight: 600; color: #f1f5f9; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
     .track-artist { font-size: 12px; color: #94a3b8; }
   </style>
 </head>
@@ -498,9 +510,12 @@ func (h *Handler) HandleHome(w http.ResponseWriter, r *http.Request) {
       data.tracks.forEach((track, idx) => {
         const li = document.createElement('li');
         li.className = 'track-item';
-        const thumbHtml = (track.video_id && track.video_id.length === 11)
-          ? '<img class="track-thumb" src="https://img.youtube.com/vi/' + track.video_id + '/mqdefault.jpg" alt="thumbnail">'
-          : '';
+        let thumbHtml = '';
+        if (track.video_id && track.video_id.length === 11) {
+          thumbHtml = '<img class="track-thumb" src="https://img.youtube.com/vi/' + track.video_id + '/mqdefault.jpg" alt="thumb" onerror="this.outerHTML=\'<div class=\\\'track-thumb-placeholder\\\'>🎵</div>\'">';
+        } else {
+          thumbHtml = '<div class="track-thumb-placeholder">🎵</div>';
+        }
         li.innerHTML = '<span class="track-num">' + (idx + 1) + '</span>' + thumbHtml + '<div class="track-info"><div class="track-title">' + track.title + '</div><div class="track-artist">' + track.artist + '</div></div>';
         list.appendChild(li);
       });
