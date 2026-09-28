@@ -69,12 +69,12 @@ func (s *GeminiService) AnalyzeMoodFromImage(ctx context.Context, imageBytes []b
 			},
 			"tracks": {
 				Type:        genai.TypeArray,
-				Description: "사진의 분위기와 완벽히 어울리는 대표 한국/외국 음악 3~5곡",
+				Description: "Melon, Spotify, YouTube Music에 정식 발매되어 실존하는 대표 유명 음악 3~5곡 (없는 곡 지어내기 절대 금지)",
 				Items: &genai.Schema{
 					Type: genai.TypeObject,
 					Properties: map[string]*genai.Schema{
-						"artist": {Type: genai.TypeString, Description: "가수 또는 그룹명"},
-						"title":  {Type: genai.TypeString, Description: "노래 제목"},
+						"artist": {Type: genai.TypeString, Description: "실존하는 공식 가수/그룹명 (예: 아이유, 헤이즈, Coldplay, 뉴진스)"},
+						"title":  {Type: genai.TypeString, Description: "실제 발매된 정식 노래 제목 (예: 밤편지, 비도 오고 그래서, Yellow)"},
 					},
 					Required: []string{"artist", "title"},
 				},
@@ -83,11 +83,13 @@ func (s *GeminiService) AnalyzeMoodFromImage(ctx context.Context, imageBytes []b
 		Required: []string{"mood_summary", "playlist_title", "playlist_description", "tracks"},
 	}
 
-	prompt := `당신은 사진의 분위기를 읽어내어 완벽한 음악 플레이리스트를 만들어주는 전문 DJ이자 음악 큐레이터입니다.
-제공된 이미지를 정밀하게 분석하여:
-1. 사진의 계절, 날씨, 조명, 장소, 피사체, 전체적인 감정/분위기를 파악하세요.
-2. 이 분위기와 완벽하게 조화되는 인기 있고 검증된 대표 음악 3~5곡(국내 가요, 인디, 팝 등)을 엄선하세요.
-3. YouTube에서 공식 음원으로 정확히 검색될 수 있는 정확하고 정식 표기된 아티스트명과 곡명을 제공하세요.
+	prompt := `당신은 사진의 분위기를 정밀하게 읽어내어 완벽한 음악 플레이리스트를 만들어주는 전문 음악 큐레이터입니다.
+
+[🚨 최우선 원칙: 없는 곡명/가수 지어내기(환각/Hallucination) 절대 엄금]
+1. 절대로 존재하지 않는 가상의 곡이나, 분위기에 어울릴 것 같다고 임의로 창작한 곡명을 추천하지 마세요.
+2. 반드시 Melon, Spotify, YouTube Music에 정식 발매되어 대중적으로 널리 알려진 실존하는 유명 가수의 '실제 대표 히트곡'만 추천해야 합니다.
+3. 국내 가요는 멜론/유튜브뮤직에 등록된 정식 공식 한국어 표기(예: '아이유' - '밤편지', '헤이즈' - '비도 오고 그래서', '성시경' - '너의 모든 순간')를 사용하고, 팝송은 원래 정식 영문 표기(예: 'Coldplay' - 'Yellow')를 사용하세요.
+4. 사진의 분위기, 계절감, 장소, 날씨, 감정을 완벽히 반영하되, YouTube에서 공식 음원(Official Audio)으로 즉시 검색 가능한 실존 명곡 3~5곡을 선정하세요.
 반드시 지정된 JSON 규격에 맞추어 한국어로 답변하세요.`
 
 	parts := []*genai.Part{
@@ -99,8 +101,9 @@ func (s *GeminiService) AnalyzeMoodFromImage(ctx context.Context, imageBytes []b
 	config := &genai.GenerateContentConfig{
 		ResponseMIMEType: "application/json",
 		ResponseSchema:   schema,
-		Temperature:      genai.Ptr[float32](0.7),
-		MaxOutputTokens:  800,
+		// 환각 방지 및 실존하는 대표 음원 선곡을 위해 온도를 0.2로 낮추어 사실성 극대화
+		Temperature:     genai.Ptr[float32](0.2),
+		MaxOutputTokens: 800,
 		// 직관적인 감성 선곡 작업을 위해 Thinking을 Minimal로 설정하여 추론 딜레이를 최소화하고 즉각 응답
 		ThinkingConfig: &genai.ThinkingConfig{
 			ThinkingLevel: genai.ThinkingLevelMinimal,
