@@ -9,9 +9,9 @@ type Track struct {
 	VideoID string `json:"video_id,omitempty"`
 }
 
-// SearchQuery YouTube 검색에 사용할 쿼리 문자열을 생성합니다.
+// SearchQuery YouTube 공식 음원 검색에 사용할 정밀 쿼리 문자열을 생성합니다.
 func (t Track) SearchQuery() string {
-	return fmt.Sprintf("%s %s official audio", t.Artist, t.Title)
+	return fmt.Sprintf("%s %s Official Audio", t.Artist, t.Title)
 }
 
 // String 트랙 표시 문자열

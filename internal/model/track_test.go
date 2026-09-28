@@ -8,7 +8,7 @@ func TestTrack_SearchQuery(t *testing.T) {
 		Title:  "밤편지",
 	}
 
-	expected := "아이유 밤편지 official audio"
+	expected := "아이유 밤편지 Official Audio"
 	actual := track.SearchQuery()
 
 	if actual != expected {

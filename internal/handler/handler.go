@@ -510,13 +510,7 @@ func (h *Handler) HandleHome(w http.ResponseWriter, r *http.Request) {
       data.tracks.forEach((track, idx) => {
         const li = document.createElement('li');
         li.className = 'track-item';
-        let thumbHtml = '';
-        if (track.video_id && track.video_id.length === 11) {
-          thumbHtml = '<img class="track-thumb" src="https://img.youtube.com/vi/' + track.video_id + '/mqdefault.jpg" alt="thumb" onerror="this.outerHTML=\'<div class=\\\'track-thumb-placeholder\\\'>🎵</div>\'">';
-        } else {
-          thumbHtml = '<div class="track-thumb-placeholder">🎵</div>';
-        }
-        li.innerHTML = '<span class="track-num">' + (idx + 1) + '</span>' + thumbHtml + '<div class="track-info"><div class="track-title">' + track.title + '</div><div class="track-artist">' + track.artist + '</div></div>';
+        li.innerHTML = '<span class="track-num">' + (idx + 1) + '</span><div class="track-thumb-placeholder">🎵</div><div class="track-info"><div class="track-title">' + track.title + '</div><div class="track-artist">' + track.artist + '</div></div>';
         list.appendChild(li);
       });
 
