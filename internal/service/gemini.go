@@ -101,8 +101,8 @@ func (s *GeminiService) AnalyzeMoodFromImage(ctx context.Context, imageBytes []b
 	config := &genai.GenerateContentConfig{
 		ResponseMIMEType: "application/json",
 		ResponseSchema:   schema,
-		// 환각 방지 및 실존하는 대표 음원 선곡을 위해 온도를 0.2로 낮추어 사실성 극대화
-		Temperature:     genai.Ptr[float32](0.2),
+		// 환각 방지(프롬프트)와 감성 선곡 다양성 간의 황금 밸런스를 위해 0.45로 설정
+		Temperature:     genai.Ptr[float32](0.45),
 		MaxOutputTokens: 800,
 		// 직관적인 감성 선곡 작업을 위해 Thinking을 Minimal로 설정하여 추론 딜레이를 최소화하고 즉각 응답
 		ThinkingConfig: &genai.ThinkingConfig{
