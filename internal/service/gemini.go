@@ -17,7 +17,7 @@ type GeminiService struct {
 }
 
 // NewGeminiService Gemini 클라이언트를 초기화합니다.
-func NewGeminiService(ctx context.Context, apiKey string) (*GeminiService, error) {
+func NewGeminiService(ctx context.Context, apiKey, modelName string) (*GeminiService, error) {
 	if apiKey == "" {
 		return nil, fmt.Errorf("GEMINI_API_KEY가 설정되지 않았습니다")
 	}
@@ -30,10 +30,14 @@ func NewGeminiService(ctx context.Context, apiKey string) (*GeminiService, error
 		return nil, fmt.Errorf("Gemini 클라이언트 생성 실패: %w", err)
 	}
 
-	// 기본 멀티모달 고속 모델로 gemini-2.5-flash 사용
+	if modelName == "" {
+		modelName = "gemini-3.8-flash"
+	}
+
+	// 기본 멀티모달 고성능 플래그십 모델로 gemini-3.8-flash 사용
 	return &GeminiService{
 		client: client,
-		model:  "gemini-2.5-flash",
+		model:  modelName,
 	}, nil
 }
 

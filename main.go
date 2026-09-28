@@ -27,11 +27,11 @@ func main() {
 	var geminiService *service.GeminiService
 	if cfg.GeminiAPIKey != "" {
 		ctx := context.Background()
-		geminiService, err = service.NewGeminiService(ctx, cfg.GeminiAPIKey)
+		geminiService, err = service.NewGeminiService(ctx, cfg.GeminiAPIKey, cfg.GeminiModel)
 		if err != nil {
 			log.Printf("⚠️ Gemini 서비스 초기화 실패: %v", err)
 		} else {
-			log.Println("✨ Gemini 멀티모달 AI 서비스 초기화 완료")
+			log.Printf("✨ Gemini 멀티모달 AI 서비스 초기화 완료 (모델: %s)\n", cfg.GeminiModel)
 		}
 	} else {
 		log.Println("ℹ️ GEMINI_API_KEY가 설정되지 않아 사진 분석 시 오류 안내가 반환됩니다.")

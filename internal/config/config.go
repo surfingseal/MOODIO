@@ -17,6 +17,7 @@ type Config struct {
 	RedirectURL        string
 	OAuthState         string
 	GeminiAPIKey       string
+	GeminiModel        string
 }
 
 // Load 환경변수로부터 설정을 로드하고 검증합니다.
@@ -28,6 +29,7 @@ func Load() (*Config, error) {
 		RedirectURL:        getEnv("REDIRECT_URL", "http://localhost:8080/auth/google/callback"),
 		OAuthState:         getEnv("OAUTH_STATE", "moodio-oauth-state-token"),
 		GeminiAPIKey:       os.Getenv("GEMINI_API_KEY"),
+		GeminiModel:        getEnv("GEMINI_MODEL", "gemini-3.8-flash"),
 	}
 
 	if cfg.GeminiAPIKey == "" {
