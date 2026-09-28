@@ -73,8 +73,9 @@ func (s *GeminiService) AnalyzeMoodFromImage(ctx context.Context, imageBytes []b
 				Items: &genai.Schema{
 					Type: genai.TypeObject,
 					Properties: map[string]*genai.Schema{
-						"artist": {Type: genai.TypeString, Description: "가수 또는 그룹명"},
-						"title":  {Type: genai.TypeString, Description: "노래 제목"},
+						"artist":   {Type: genai.TypeString, Description: "가수 또는 그룹명"},
+						"title":    {Type: genai.TypeString, Description: "노래 제목"},
+						"video_id": {Type: genai.TypeString, Description: "해당 곡의 YouTube 공식 음원/MV 11자리 비디오 ID (예: 'dQw4w9WgXcQ', 불확실하면 빈 문자열)"},
 					},
 					Required: []string{"artist", "title"},
 				},
@@ -83,11 +84,12 @@ func (s *GeminiService) AnalyzeMoodFromImage(ctx context.Context, imageBytes []b
 		Required: []string{"mood_summary", "playlist_title", "playlist_description", "tracks"},
 	}
 
-	prompt := `당신은 사진의 분위기를 읽어내어 완벽한 음악 플레이리스트를 만들어주는 전문 DJ입니다.
+	prompt := `당신은 사진의 분위기를 읽어내어 완벽한 음악 플레이리스트를 만들어주는 전문 DJ이자 음악 큐레이터입니다.
 제공된 이미지를 정밀하게 분석하여:
 1. 사진의 계절, 날씨, 조명, 장소, 피사체, 전체적인 감정/분위기를 파악하세요.
 2. 이 분위기와 완벽하게 조화되는 인기 있고 검증된 음악 3~5곡(국내 가요, 인디, 팝 등)을 엄선하세요.
 3. YouTube에서 정확히 검색될 수 있는 정확한 아티스트명과 곡명을 제공하세요.
+4. 해당 곡의 공식 YouTube 음원 또는 뮤직비디오의 11자리 비디오 ID(예: 'afxLaQiLu-o')를 알고 있다면 video_id에 기재하고, 확실하지 않다면 빈 문자열("")로 두세요.
 반드시 지정된 JSON 규격에 맞추어 한국어로 답변하세요.`
 
 	parts := []*genai.Part{

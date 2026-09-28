@@ -4,8 +4,9 @@ import "fmt"
 
 // Track 음악 트랙 정보
 type Track struct {
-	Artist string `json:"artist"`
-	Title  string `json:"title"`
+	Artist  string `json:"artist"`
+	Title   string `json:"title"`
+	VideoID string `json:"video_id,omitempty"`
 }
 
 // SearchQuery YouTube 검색에 사용할 쿼리 문자열을 생성합니다.
