@@ -101,9 +101,9 @@ func (s *GeminiService) AnalyzeMoodFromImage(ctx context.Context, imageBytes []b
 		ResponseSchema:   schema,
 		Temperature:      genai.Ptr[float32](0.7),
 		MaxOutputTokens:  800,
-		// 감성 선곡 및 분위기 파악은 직관적인 멀티모달 창작 작업이므로 Thinking을 0(Off)으로 설정하여 추론 딜레이 없이 즉각 응답
+		// 직관적인 감성 선곡 작업을 위해 Thinking을 Minimal로 설정하여 추론 딜레이를 최소화하고 즉각 응답
 		ThinkingConfig: &genai.ThinkingConfig{
-			ThinkingBudget: genai.Ptr[int32](0),
+			ThinkingLevel: genai.ThinkingLevelMinimal,
 		},
 	}
 
