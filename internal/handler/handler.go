@@ -1,14 +1,19 @@
 package handler
 
 import (
+	"context"
+	"crypto/hmac"
 	"crypto/rand"
+	"crypto/sha256"
 	"crypto/subtle"
+	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"io"
 	"log"
 	"net/http"
+	"strings"
 	"sync"
 	"time"
 
@@ -53,6 +58,185 @@ func generateRandomState() string {
 	b := make([]byte, 16)
 	_, _ = rand.Read(b)
 	return hex.EncodeToString(b)
+}
+
+const pendingOAuthCookieName = "moodio_oauth_session"
+
+type pendingOAuthSession struct {
+	State     string                `json:"state"`
+	Request   model.PlaylistRequest `json:"req"`
+	CreatedAt int64                 `json:"created_at"`
+}
+
+func isSecureRequest(r *http.Request) bool {
+	return r.TLS != nil ||
+		strings.EqualFold(r.Header.Get("X-Forwarded-Proto"), "https") ||
+		strings.EqualFold(r.Header.Get("X-Forwarded-Scheme"), "https")
+}
+
+// setPendingOAuthCookie 다중 인스턴스/재배포 환경에서도 유지되도록 HMAC 서명된 쿠키에 상태를 보관합니다.
+func (h *Handler) setPendingOAuthCookie(w http.ResponseWriter, r *http.Request, state string, req model.PlaylistRequest) error {
+	session := pendingOAuthSession{
+		State:     state,
+		Request:   req,
+		CreatedAt: time.Now().Unix(),
+	}
+	data, err := json.Marshal(session)
+	if err != nil {
+		return err
+	}
+
+	secretKey := h.cfg.OAuthState
+	if secretKey == "" {
+		secretKey = "moodio-default-cookie-secret"
+	}
+
+	mac := hmac.New(sha256.New, []byte(secretKey))
+	mac.Write(data)
+	sig := hex.EncodeToString(mac.Sum(nil))
+	encodedPayload := base64.RawURLEncoding.EncodeToString(data)
+	cookieValue := encodedPayload + "." + sig
+
+	http.SetCookie(w, &http.Cookie{
+		Name:     pendingOAuthCookieName,
+		Value:    cookieValue,
+		Path:     "/",
+		MaxAge:   900, // 15분
+		HttpOnly: true,
+		Secure:   isSecureRequest(r),
+		SameSite: http.SameSiteLaxMode, // OAuth 콜백 시 쿠키 전달 필수
+	})
+	return nil
+}
+
+// getPendingOAuthSession 쿠키의 HMAC 서명 및 만료시간을 검증하고 세션 데이터를 복원합니다.
+func (h *Handler) getPendingOAuthSession(w http.ResponseWriter, r *http.Request, state string) (*model.PlaylistRequest, bool) {
+	cookie, err := r.Cookie(pendingOAuthCookieName)
+	if err != nil || cookie.Value == "" {
+		return nil, false
+	}
+
+	parts := strings.Split(cookie.Value, ".")
+	if len(parts) != 2 {
+		return nil, false
+	}
+	payloadBytes, err := base64.RawURLEncoding.DecodeString(parts[0])
+	if err != nil {
+		return nil, false
+	}
+
+	secretKey := h.cfg.OAuthState
+	if secretKey == "" {
+		secretKey = "moodio-default-cookie-secret"
+	}
+
+	mac := hmac.New(sha256.New, []byte(secretKey))
+	mac.Write(payloadBytes)
+	expectedSig := hex.EncodeToString(mac.Sum(nil))
+	if subtle.ConstantTimeCompare([]byte(parts[1]), []byte(expectedSig)) != 1 {
+		log.Println("⚠️ OAuth 세션 쿠키 서명 검증 실패 (위변조 감지)")
+		return nil, false
+	}
+
+	var session pendingOAuthSession
+	if err := json.Unmarshal(payloadBytes, &session); err != nil {
+		return nil, false
+	}
+
+	if subtle.ConstantTimeCompare([]byte(session.State), []byte(state)) != 1 {
+		log.Printf("⚠️ OAuth 세션 State 불일치 (cookie: %s, query: %s)", session.State, state)
+		return nil, false
+	}
+
+	if time.Now().Unix()-session.CreatedAt > 900 {
+		log.Println("⚠️ OAuth 세션 유효 시간 만료 (15분 초과)")
+		return nil, false
+	}
+
+	// 사용 완료된 쿠키 제거
+	http.SetCookie(w, &http.Cookie{
+		Name:     pendingOAuthCookieName,
+		Value:    "",
+		Path:     "/",
+		MaxAge:   -1,
+		HttpOnly: true,
+		SameSite: http.SameSiteLaxMode,
+	})
+
+	return &session.Request, true
+}
+
+func (h *Handler) renderErrorPage(w http.ResponseWriter, title, message string) {
+	html := fmt.Sprintf(`<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>%s - MOODIO</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Pretendard:wght@400;600;700&display=swap" rel="stylesheet">
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: 'Pretendard', -apple-system, BlinkMacSystemFont, sans-serif;
+      background: #090d16;
+      color: #f1f5f9;
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 20px;
+    }
+    .card {
+      background: rgba(30, 41, 59, 0.7);
+      backdrop-filter: blur(16px);
+      -webkit-backdrop-filter: blur(16px);
+      border: 1px solid rgba(255, 255, 255, 0.1);
+      border-radius: 24px;
+      padding: 40px 32px;
+      max-width: 480px;
+      width: 100%%;
+      text-align: center;
+      box-shadow: 0 20px 40px rgba(0, 0, 0, 0.5);
+    }
+    .icon { font-size: 48px; margin-bottom: 16px; }
+    h1 { font-size: 20px; font-weight: 700; color: #f8fafc; margin-bottom: 12px; }
+    p { font-size: 14px; color: #94a3b8; line-height: 1.6; margin-bottom: 28px; }
+    .btn {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      padding: 14px 28px;
+      border-radius: 9999px;
+      background: linear-gradient(135deg, #6366f1, #a855f7);
+      color: white;
+      text-decoration: none;
+      font-weight: 600;
+      font-size: 15px;
+      transition: all 0.2s ease;
+      box-shadow: 0 4px 14px rgba(99, 102, 241, 0.4);
+    }
+    .btn:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 6px 20px rgba(99, 102, 241, 0.6);
+    }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <div class="icon">⚠️</div>
+    <h1>%s</h1>
+    <p>%s</p>
+    <a href="/" class="btn">🏠 MOODIO 홈으로 돌아가기</a>
+  </div>
+</body>
+</html>`, title, title, message)
+
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	w.WriteHeader(http.StatusBadRequest)
+	_, _ = w.Write([]byte(html))
 }
 
 func (h *Handler) savePendingPlaylist(state string, req model.PlaylistRequest) {
@@ -625,6 +809,9 @@ func (h *Handler) HandleCreateFlow(w http.ResponseWriter, r *http.Request) {
 
 	state := generateRandomState()
 	h.savePendingPlaylist(state, req)
+	if err := h.setPendingOAuthCookie(w, r, state, req); err != nil {
+		log.Printf("⚠️ OAuth 세션 쿠키 설정 실패: %v", err)
+	}
 
 	oauthConfig := h.cfg.OAuth2Config()
 	authURL := oauthConfig.AuthCodeURL(state, oauth2.AccessTypeOffline)
@@ -652,15 +839,23 @@ func (h *Handler) HandleGoogleCallback(w http.ResponseWriter, r *http.Request) {
 	state := r.URL.Query().Get("state")
 	code := r.URL.Query().Get("code")
 	if code == "" {
-		http.Error(w, "인증 코드가 전달되지 않았습니다.", http.StatusBadRequest)
+		h.renderErrorPage(w, "인증 코드 누락", "구글 인증 코드가 전달되지 않았습니다.<br>홈 화면으로 돌아가서 다시 시도해주세요.")
 		return
 	}
 
 	var playlistReq model.PlaylistRequest
-	if pending, exists := h.getAndRemovePendingPlaylist(state); exists {
+	var found bool
+
+	// 1순위: 무상태(Stateless) 서명 쿠키에서 복원 (다중 컨테이너 / 재배포 환경 완벽 지원)
+	if cookieReq, ok := h.getPendingOAuthSession(w, r, state); ok {
+		playlistReq = *cookieReq
+		found = true
+	} else if pending, exists := h.getAndRemovePendingPlaylist(state); exists {
+		// 2순위: 인메모리 fallback
 		playlistReq = pending
+		found = true
 	} else if subtle.ConstantTimeCompare([]byte(state), []byte(h.cfg.OAuthState)) == 1 {
-		// 고정 기본 트랙 fallback
+		// 3순위: 고정 기본 트랙 fallback
 		playlistReq = model.PlaylistRequest{
 			Title:         "비 내리는 늦은 오후의 산책 🌧️",
 			Description:   "사진 분위기 맞춤 자동 선곡 플레이리스트 (MOODIO)",
@@ -671,19 +866,25 @@ func (h *Handler) HandleGoogleCallback(w http.ResponseWriter, r *http.Request) {
 				{Artist: "폴킴", Title: "모든 날 모든 순간"},
 			},
 		}
-	} else {
-		http.Error(w, "잘못된 State 토큰입니다. (CSRF 검증 실패)", http.StatusBadRequest)
+		found = true
+	}
+
+	if !found {
+		h.renderErrorPage(w, "인증 세션 만료", "페이지가 새로고침되었거나 인증 유효 시간(15분)이 만료되었습니다.<br>보안을 위해 1회용 토큰이 초기화되었으니, 홈 화면으로 이동하여 다시 시도해주세요.")
 		return
 	}
 
-	ctx := r.Context()
+	// 브라우저 탭 닫힘이나 일시적 네트워크 끊김에도 플레이리스트 생성이 취소되지 않도록 안정적인 타임아웃 컨텍스트 사용
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+	defer cancel()
+
 	oauthConfig := h.cfg.OAuth2Config()
 
 	// 1. 코드를 Access Token으로 교환
 	token, err := oauthConfig.Exchange(ctx, code)
 	if err != nil {
 		log.Printf("❌ OAuth 토큰 교환 실패: %v", err)
-		http.Error(w, fmt.Sprintf("토큰 발급 실패: %v", err), http.StatusInternalServerError)
+		h.renderErrorPage(w, "인증 토큰 발급 실패", fmt.Sprintf("구글 계정 인증 토큰을 발급받지 못했습니다.<br>상세 내용: %v", err))
 		return
 	}
 
@@ -691,7 +892,7 @@ func (h *Handler) HandleGoogleCallback(w http.ResponseWriter, r *http.Request) {
 	ytService, err := service.NewYouTubeService(ctx, oauthConfig, token)
 	if err != nil {
 		log.Printf("❌ YouTube 서비스 생성 실패: %v", err)
-		http.Error(w, fmt.Sprintf("YouTube API 클라이언트 초기화 실패: %v", err), http.StatusInternalServerError)
+		h.renderErrorPage(w, "YouTube 서비스 초기화 실패", fmt.Sprintf("YouTube API 클라이언트를 시작하지 못했습니다.<br>상세 내용: %v", err))
 		return
 	}
 
@@ -699,7 +900,7 @@ func (h *Handler) HandleGoogleCallback(w http.ResponseWriter, r *http.Request) {
 	playlistURL, err := ytService.GeneratePlaylistWithTracks(ctx, playlistReq)
 	if err != nil {
 		log.Printf("❌ 플레이리스트 처리 실패: %v", err)
-		http.Error(w, fmt.Sprintf("플레이리스트 생성 실패: %v", err), http.StatusInternalServerError)
+		h.renderErrorPage(w, "플레이리스트 생성 실패", fmt.Sprintf("YouTube에 플레이리스트를 생성하고 곡을 등록하는 도중 오류가 발생했습니다.<br>상세 내용: %v", err))
 		return
 	}
 
